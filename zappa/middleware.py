@@ -57,23 +57,9 @@ class ZappaWSGIMiddleware(object):
 
         # Parse cookies from the WSGI environment
         parsed = parse_cookie(environ)
-
-        # Decode the special zappa cookie if present in the request
-        if 'zappa' in parsed:
-
-            # Save the parsed cookies. We need to send them back on every update.
-            self.decode_zappa_cookie(parsed['zappa'])
-
-            # Since the client doesn't know it has old cookies,
-            # manual expire them.
-            self.filter_expired_cookies()
-
-            # Set the WSGI environment cookie to be the decoded value.
-            environ[u'HTTP_COOKIE'] = self.cookie_environ_string()
-        else:
-            # No cookies were previously set
-            self.request_cookies = dict()
-
+        parsed.pop('zappa', None)
+        self.request_cookies = parsed
+        environ[u'HTTP_COOKIE'] = parsed
         # Call the application with our modifier
         response = self.application(environ, self.encode_response)
 
@@ -112,39 +98,6 @@ class ZappaWSGIMiddleware(object):
         # Update request_cookies with cookies from the response. If there are
         # multiple occuring cookies, the last one present in the headers wins.
         map(self.request_cookies.update, cookie_dicts)
-
-        # Get the oldest expire time, and set the Zappa cookie age to that.
-        # Else, let this be a session cookie.
-        expires = None
-        for _, exp in self.iter_cookies_expires():
-            if exp > expires:
-                expires = exp
-
-        # JSON-ify the cookie and encode it.
-        pack_s = json.dumps(self.request_cookies)
-        encoded = base58.b58encode(pack_s)
-
-        # Set the result as the zappa cookie
-        new_headers.append(
-            (
-                'Set-Cookie',
-                dump_cookie('zappa', value=encoded, expires=expires)
-            )
-        )
-
-        # If setting cookie on a 301/2,
-        # return 200 and replace the content with a javascript redirector
-        # content_type_header_key = [k for k, v in enumerate(new_headers) if v[0] == 'Content-Type']
-        # if len(content_type_header_key) > 0:
-        #     if "text/html" in new_headers[content_type_header_key[0]][1]:
-        #         if status != '200 OK':
-        #             for key, value in new_headers:
-        #                 if key != 'Location':
-        #                     continue
-        #                 self.redirect_content = REDIRECT_HTML.replace('REDIRECT_ME', value)
-        #                 status = '200 OK'
-        #                 break
-
         return self.start_response(status, new_headers, exc_info)
 
     def decode_zappa_cookie(self, encoded_zappa):
@@ -173,6 +126,8 @@ class ZappaWSGIMiddleware(object):
             Yield name and expires of cookies.
         """
         for name, value in self.request_cookies.items():
+            if not isinstance(value, basestring):
+                continue
             cookie = (name + '=' + value).encode('utf-8')
             if cookie.count('=') is 1:
                 continue
@@ -192,4 +147,8 @@ class ZappaWSGIMiddleware(object):
         """
         Return the current set of cookies as a string for the HTTP_COOKIE environ.
         """
-        return ';'.join([key + '=' + value for key, value in self.request_cookies.items()])
+        str_list = [
+            key + '=' + value for key, value in self.request_cookies.items()
+            if isinstance(value, (str, unicode))
+        ]
+        return ';'.join(str_list)

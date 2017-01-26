@@ -11,6 +11,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+venv/
 env/
 build/
 develop-eggs/
@@ -77,3 +78,4 @@ target/
 *~
 tests/zappa_settings.json
 tests/example_template_outputs
+/test_settings.py
